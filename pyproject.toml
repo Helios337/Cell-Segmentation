@@ -30,8 +30,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Helios337/Cell-Segmentation-Unet-"
-Repository = "https://github.com/Helios337/Cell-Segmentation-Unet-"
+Homepage = "https://github.com/Helios337/Cell-Segmentation"
+Repository = "https://github.com/Helios337/Cell-Segmentation"
 
 [project.optional-dependencies]
 dev = [
@@ -39,8 +39,8 @@ dev = [
     "ruff>=0.1.0",
 ]
 
-[tool.setuptools.packages.find]
-include = ["src*"]
+[tool.setuptools]
+py-modules = ["main", "model", "data_handler", "utils", "colab_setup"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

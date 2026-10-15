@@ -8,27 +8,21 @@ Usage:
     %run colab_setup.py
 """
 
-import os
+import importlib
 import subprocess
-import sys
 
 
 def run_command(cmd, check=True):
     """Run a shell command and print output."""
     print(f"$ {cmd}")
-    result = subprocess.run(cmd, shell=True, capture_output=False)
-    if check and result.returncode != 0:
-        print(f"Command failed with exit code {result.returncode}")
-        sys.exit(1)
+    result = subprocess.run(cmd, shell=True, capture_output=False, check=check)
     return result.returncode
 
 
 def check_gpu():
     """Check if GPU is available in Colab."""
     print("Checking GPU availability ...")
-    result = subprocess.run(
-        "nvidia-smi", shell=True, capture_output=True, text=True
-    )
+    result = subprocess.run("nvidia-smi", shell=True, capture_output=True, text=True, check=False)
     if result.returncode == 0:
         print("GPU is available:")
         for line in result.stdout.split("\n")[:5]:
@@ -47,11 +41,11 @@ def install_dependencies():
 
 
 def verify_installation():
-    """Verify that all imports work."""
+    """Verify that all modules import cleanly."""
     print("\nVerifying installation ...")
-    import model
-    import data_handler
-    import utils
+    for module in ("model", "data_handler", "utils"):
+        importlib.import_module(module)
+        print(f"  OK: {module}")
     print("All imports OK.")
 
 

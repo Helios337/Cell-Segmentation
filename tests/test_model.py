@@ -4,6 +4,7 @@ Tests for cell segmentation U-Net model.
 
 import numpy as np
 import pytest
+
 from model import CellSegmentationTool
 
 
@@ -86,6 +87,7 @@ def test_post_process_and_count():
     """Test post-processing with a known binary mask."""
     mask = np.zeros((100, 100), dtype=np.float32)
     from skimage.draw import disk
+
     rr, cc = disk((30, 30), 15)
     mask[rr, cc] = 1.0
     rr2, cc2 = disk((70, 70), 12)
@@ -141,12 +143,14 @@ def test_optimize_post_processing():
     """Test post-processing grid search optimization."""
     mask = np.zeros((100, 100), dtype=np.float32)
     from skimage.draw import disk
+
     rr, cc = disk((30, 30), 15)
     mask[rr, cc] = 1.0
     rr2, cc2 = disk((70, 70), 12)
     mask[rr2, cc2] = 1.0
 
-    best_thresh, best_min_size, best_count, best_iou = \
+    _best_thresh, _best_min_size, best_count, best_iou = (
         CellSegmentationTool.optimize_post_processing(mask, mask)
+    )
     assert best_iou >= 0, f"IoU should be non-negative, got {best_iou}"
     assert best_count >= 2, f"Expected at least 2 cells, got {best_count}"

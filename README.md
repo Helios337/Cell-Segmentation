@@ -9,15 +9,15 @@ Automatically detect, segment, and count nuclei in fluorescence microscopy image
 
 ## Key Features
 
-- **U-Net with ResNet50 Encoder** — Pretrained on ImageNet for strong feature extraction
-- **Two-Phase Training** — Frozen encoder first, then full fine-tuning
-- **Focal Loss** — Handles extreme class imbalance in cell segmentation
-- **Watershed Post-Processing** — Separates touching/overlapping nuclei for accurate counting
-- **Test-Time Augmentation** — Averages predictions across flips for robust results
-- **BBBC Dataset Support** — Download real microscopy data from the Broad Bioimage Benchmark Collection
-- **Post-Processing Optimization** — Grid search over threshold and min_size for best cell count accuracy
-- **Comprehensive Evaluation** — IoU, Dice, Precision, Recall, F1, and Cell Count MAE
-- **Google Drive Checkpointing** — Save models persistently on Colab
+- **U-Net with ResNet50 Encoder** - Pretrained on ImageNet for strong feature extraction
+- **Two-Phase Training** - Frozen encoder first, then full fine-tuning
+- **Focal Loss** - Handles extreme class imbalance in cell segmentation
+- **Watershed Post-Processing** - Separates touching/overlapping nuclei for accurate counting
+- **Test-Time Augmentation** - Averages predictions across flips for robust results
+- **BBBC Dataset Support** - Download real microscopy data from the Broad Bioimage Benchmark Collection
+- **Post-Processing Optimization** - Grid search over threshold and min_size for best cell count accuracy
+- **Comprehensive Evaluation** - IoU, Dice, Precision, Recall, F1, and Cell Count MAE
+- **Google Drive Checkpointing** - Save models persistently on Colab
 
 ## Quick Start
 
@@ -56,18 +56,21 @@ Or set up manually:
 ## CLI Usage
 
 ```bash
-# Train on BBBC038 nuclei data
+# Train on BBBC038 nuclei data (default mode)
 python main.py --mode train --data-source BBBC038
 
 # Train with custom hyperparameters
 python main.py --data-source BBBC038 --epochs-phase1 10 --epochs-phase2 20 \
-  --batch-size 8 --lr-phase1 0.001 --lr-phase2 0.0001
+  --batch-size 8 --lr-phase1 0.001 --lr-phase2 0.00001
 
-# Evaluate a trained model
-python main.py --mode eval --data-source BBBC038
+# Quick demo on synthetic data (no download needed)
+python main.py --data-source synthetic --n-samples 50 --epochs-phase1 1 --epochs-phase2 1
+
+# Evaluate a trained model on the test split
+python main.py --mode eval --data-source BBBC038 --model-path best_model.keras
 
 # Predict on a single image
-python main.py --mode predict --data-source BBBC038
+python main.py --mode predict --image-path /path/to/cell.png --model-path best_model.keras
 
 # With test-time augmentation
 python main.py --data-source BBBC038 --tta
@@ -76,17 +79,21 @@ python main.py --data-source BBBC038 --tta
 python main.py --data-source BBBC038 --optimize-thresholds
 ```
 
+All hyperparameters default to the values in `config.yaml` and can be overridden on the command line.
+
 ## Project Structure
 
 ```
-├── main.py                 # CLI pipeline runner
+├── main.py                 # CLI pipeline runner (train / eval / predict)
 ├── model.py                # U-Net + ResNet50 encoder + training + evaluation
-├── data_handler.py         # BBBC downloader + real data loader + augmentation
-├── utils.py                # Image processing, augmentation, CSV export
-├── config.yaml             # Hyperparameter configuration
-├── tests/test_model.py     # Unit tests
+├── data_handler.py         # BBBC downloader + real/synthetic data loader
+├── utils.py                # Augmentation, config loading, CSV export
+├── config.yaml             # Default hyperparameters (loaded by main.py)
+├── colab_setup.py          # One-shot Colab setup + training helper
+├── tests/                  # Unit tests (model, data handler, utils)
 ├── pyproject.toml          # Package metadata and build config
-├── Makefile                # Common commands
+├── requirements.txt        # Runtime dependencies
+├── Makefile                # Common commands (install, train, test, lint)
 ├── Dockerfile              # Containerized deployment
 └── .github/workflows/ci.yml
 ```
@@ -111,7 +118,7 @@ This handles class imbalance (nuclei occupy a small fraction of the image) bette
 ## Training Strategy
 
 1. **Phase 1** (frozen encoder): Train decoder only for 10 epochs with lr=1e-3
-2. **Phase 2** (fine-tune): Unfreeze encoder, train entire model for 20 epochs with lr=1e-4
+2. **Phase 2** (fine-tune): Unfreeze encoder, train entire model for 20 epochs with lr=1e-5
 3. **Early stopping** with patience=10 on validation loss
 4. **ReduceLROnPlateau** with factor=0.5, patience=5
 
