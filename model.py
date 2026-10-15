@@ -13,6 +13,18 @@ from skimage.segmentation import watershed
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.saving import register_keras_serializable
+
+
+@register_keras_serializable(name="resnet_preprocess")
+def _resnet_preprocess(x):
+    """Caffe-style ResNet50 preprocessing (scale to [0,255], subtract means).
+
+    Applied to model inputs arriving as float32 in [0,1]. The ResNet50
+    ImageNet weights expect this normalization; without it the frozen
+    encoder features are unusable.
+    """
+    return tf.keras.applications.resnet50.preprocess_input(x * 255.0)
 
 
 class TargetScoreStopping(keras.callbacks.Callback):
@@ -78,11 +90,16 @@ class CellSegmentationTool:
             return max(8, round(n * self.decoder_scale))
 
         inputs = keras.Input(shape=self.input_shape)
+        # ResNet50 ImageNet weights expect caffe-style preprocessing
+        # (scale to [0,255] then per-channel mean subtraction, BGR order).
+        # Images arrive as float32 in [0,1]; without this the frozen encoder
+        # features are unusable and the decoder cannot learn from them.
+        preprocessed = layers.Lambda(_resnet_preprocess, name="resnet_preprocess")(inputs)
 
         resnet = ResNet50(
             include_top=False,
             weights="imagenet",
-            input_tensor=inputs,
+            input_tensor=preprocessed,
             pooling=None,
         )
         resnet.trainable = True
@@ -388,6 +405,7 @@ class CellSegmentationTool:
             "iou_metric": self.iou_metric,
             "focal_loss": self.focal_loss,
             "combined_loss": self.combined_loss,
+            "_resnet_preprocess": _resnet_preprocess,
         }
         self.model = keras.models.load_model(filepath, custom_objects=custom_objects)
         self.input_shape = self.model.input_shape[1:]
