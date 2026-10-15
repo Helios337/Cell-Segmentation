@@ -113,8 +113,8 @@ def build_tool(args):
     cell_tool = CellSegmentationTool(
         input_shape=tuple(args.img_size) + (3,),
     )
-    cell_tool.build_unet()
-    cell_tool.compile_model(learning_rate=args.lr_phase1)
+    cell_tool.build_unet(decoder_scale=args.decoder_scale)
+    cell_tool.compile_model(learning_rate=args.lr_phase1, weight_decay=args.weight_decay)
     cell_tool.model.summary()
     return cell_tool
 
@@ -340,6 +340,19 @@ def build_parser():
         "--lr-phase2", type=float, default=1e-5, help="Learning rate for phase 2 (fine-tuning)"
     )
     parser.add_argument(
+        "--decoder-scale",
+        type=float,
+        default=1.0,
+        help="Scale decoder channel counts (e.g. 0.5 halves them) to reduce capacity "
+        "and curb overfitting",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.0,
+        help="Adam weight decay (L2-style regularization)",
+    )
+    parser.add_argument(
         "--augment", action="store_true", default=True, help="Enable on-the-fly augmentation"
     )
     parser.add_argument(
@@ -418,6 +431,8 @@ def apply_config_defaults(parser, config):
         "training.batch_size": "batch_size",
         "training.learning_rate_phase1": "lr_phase1",
         "training.learning_rate_phase2": "lr_phase2",
+        "model.decoder_scale": "decoder_scale",
+        "model.weight_decay": "weight_decay",
         "post_processing.threshold": "threshold",
         "post_processing.min_size": "min_size",
         "post_processing.optimize_thresholds": "optimize_thresholds",

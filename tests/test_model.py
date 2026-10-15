@@ -16,6 +16,24 @@ def test_model_build():
     assert model.output_shape == (None, 128, 128, 1)
 
 
+def test_decoder_scale_reduces_params():
+    """A smaller decoder scale must produce a smaller model, same output."""
+    full = CellSegmentationTool(input_shape=(128, 128, 3)).build_unet(decoder_scale=1.0)
+    slim = CellSegmentationTool(input_shape=(128, 128, 3)).build_unet(decoder_scale=0.5)
+    assert full.output_shape == slim.output_shape == (None, 128, 128, 1)
+    assert slim.count_params() < full.count_params()
+    # the ResNet50 encoder dominates, so expect a clear but not extreme cut
+    assert slim.count_params() < full.count_params() * 0.8
+
+
+def test_compile_model_weight_decay():
+    """Weight decay is applied to the Adam optimizer."""
+    tool = CellSegmentationTool(input_shape=(128, 128, 3))
+    tool.build_unet()
+    tool.compile_model(weight_decay=1e-4)
+    assert tool.model.optimizer.weight_decay == 1e-4
+
+
 def test_dice_coef():
     """Test dice coefficient with perfect, partial, and no overlap."""
     tool = CellSegmentationTool()
