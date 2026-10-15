@@ -2,15 +2,15 @@
 Data loader for BBBC datasets and synthetic cell image generation.
 """
 
-import numpy as np
-import cv2
 import os
 import zipfile
+
+import cv2
+import numpy as np
 import requests
 from tqdm import tqdm
 
 BBBC_URLS = {
-    "BBBC004": "https://data.broadinstitute.org/bbbc/BBBC004/BBBC004_v1_images.zip",
     "BBBC005": "https://data.broadinstitute.org/bbbc/BBBC005/BBBC005_v1_images.zip",
     "BBBC038": "https://data.broadinstitute.org/bbbc/BBBC038/stage1_train.zip",
     "BBBC039": "https://data.broadinstitute.org/bbbc/BBBC039/images.zip",
@@ -55,11 +55,15 @@ class BBBCDataLoader:
                 response = requests.get(zip_url, stream=True, timeout=120)
                 response.raise_for_status()
                 total_size = int(response.headers.get("content-length", 0))
-                with tqdm(total=total_size, unit="B", unit_scale=True, desc=self.dataset_name) as pbar:
-                    with open(zip_path, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                            pbar.update(len(chunk))
+                with (
+                    tqdm(
+                        total=total_size, unit="B", unit_scale=True, desc=self.dataset_name
+                    ) as pbar,
+                    open(zip_path, "wb") as f,
+                ):
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        pbar.update(len(chunk))
                 print("Download complete.")
             except requests.exceptions.RequestException as e:
                 print(f"Download failed: {e}")
@@ -81,11 +85,13 @@ class BBBCDataLoader:
                         response = requests.get(mask_url, stream=True, timeout=120)
                         response.raise_for_status()
                         total_size = int(response.headers.get("content-length", 0))
-                        with tqdm(total=total_size, unit="B", unit_scale=True, desc="Masks") as pbar:
-                            with open(mask_path, "wb") as f:
-                                for chunk in response.iter_content(chunk_size=8192):
-                                    f.write(chunk)
-                                    pbar.update(len(chunk))
+                        with (
+                            tqdm(total=total_size, unit="B", unit_scale=True, desc="Masks") as pbar,
+                            open(mask_path, "wb") as f,
+                        ):
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                                pbar.update(len(chunk))
                         print("Masks download complete.")
                     except requests.exceptions.RequestException as e:
                         print(f"Masks download failed: {e}")
@@ -138,7 +144,8 @@ class BBBCDataLoader:
             masks_dir = os.path.join(sample_dir, "masks")
             if os.path.isdir(masks_dir):
                 mask_files = [
-                    f for f in os.listdir(masks_dir)
+                    f
+                    for f in os.listdir(masks_dir)
                     if f.lower().endswith((".png", ".jpg", ".tif", ".tiff"))
                 ]
                 for mf in mask_files:
@@ -159,7 +166,8 @@ class BBBCDataLoader:
                         mask = (m > 0).astype(np.float32)
                 else:
                     mask_files = [
-                        f for f in os.listdir(annotation_dir)
+                        f
+                        for f in os.listdir(annotation_dir)
                         if f.lower().endswith((".png", ".jpg", ".tif", ".tiff"))
                     ]
                     for mf in mask_files:
@@ -170,11 +178,6 @@ class BBBCDataLoader:
                             mask = np.maximum(mask, (m > 0).astype(np.float32))
             masks.append(mask)
         print(f"  Masks found with nonzero pixels: {masks_found} / {len(images)}")
-        if annotation_dir or any(
-            os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(f)), "masks"))
-            for f in image_files
-        ):
-            return np.array(images), np.expand_dims(np.array(masks), axis=-1)
         return np.array(images), np.expand_dims(np.array(masks), axis=-1)
 
     def load_synthetic_data(self, n_samples=100, img_size=(256, 256)):

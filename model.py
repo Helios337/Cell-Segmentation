@@ -2,16 +2,17 @@
 U-Net model for cell segmentation with post-processing and counting.
 """
 
+import os
+
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+from scipy import ndimage
+from skimage import measure, morphology
+from skimage.segmentation import watershed
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.applications import ResNet50
-from skimage import measure, morphology
-from skimage.segmentation import watershed
-from scipy import ndimage
-import matplotlib.pyplot as plt
-import os
 
 
 class CellSegmentationTool:
@@ -59,42 +60,52 @@ class CellSegmentationTool:
 
         u6 = layers.Conv2DTranspose(512, (2, 2), strides=(2, 2), padding="same")(b5)
         u6 = layers.concatenate([u6, s4])
-        c6 = layers.Conv2D(512, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(u6)
+        c6 = layers.Conv2D(
+            512, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(u6)
         c6 = layers.Dropout(0.2)(c6)
-        c6 = layers.Conv2D(512, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(c6)
+        c6 = layers.Conv2D(
+            512, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(c6)
 
         u7 = layers.Conv2DTranspose(256, (2, 2), strides=(2, 2), padding="same")(c6)
         u7 = layers.concatenate([u7, s3])
-        c7 = layers.Conv2D(256, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(u7)
+        c7 = layers.Conv2D(
+            256, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(u7)
         c7 = layers.Dropout(0.2)(c7)
-        c7 = layers.Conv2D(256, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(c7)
+        c7 = layers.Conv2D(
+            256, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(c7)
 
         u8 = layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding="same")(c7)
         u8 = layers.concatenate([u8, s2])
-        c8 = layers.Conv2D(128, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(u8)
+        c8 = layers.Conv2D(
+            128, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(u8)
         c8 = layers.Dropout(0.1)(c8)
-        c8 = layers.Conv2D(128, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(c8)
+        c8 = layers.Conv2D(
+            128, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(c8)
 
         u9 = layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding="same")(c8)
         u9 = layers.concatenate([u9, s1], axis=3)
-        c9 = layers.Conv2D(64, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(u9)
+        c9 = layers.Conv2D(
+            64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(u9)
         c9 = layers.Dropout(0.1)(c9)
-        c9 = layers.Conv2D(64, (3, 3), activation="relu",
-                           kernel_initializer="he_normal", padding="same")(c9)
+        c9 = layers.Conv2D(
+            64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(c9)
 
         u10 = layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding="same")(c9)
-        c10 = layers.Conv2D(32, (3, 3), activation="relu",
-                            kernel_initializer="he_normal", padding="same")(u10)
+        c10 = layers.Conv2D(
+            32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(u10)
         c10 = layers.Dropout(0.1)(c10)
-        c10 = layers.Conv2D(32, (3, 3), activation="relu",
-                            kernel_initializer="he_normal", padding="same")(c10)
+        c10 = layers.Conv2D(
+            32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+        )(c10)
 
         outputs = layers.Conv2D(1, (1, 1), activation="sigmoid")(c10)
 
@@ -161,8 +172,18 @@ class CellSegmentationTool:
         )
         return self.model
 
-    def train_model(self, X_train, y_train, X_val, y_val,
-                    epochs=50, batch_size=8, freeze_encoder_epochs=0):
+    def train_model(
+        self,
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        epochs=50,
+        batch_size=8,
+        freeze_encoder_epochs=0,
+        lr_phase1=None,
+        lr_phase2=None,
+    ):
         """Train the U-Net model with two-phase training.
 
         Phase 1: Frozen encoder (if freeze_encoder_epochs > 0).
@@ -176,31 +197,36 @@ class CellSegmentationTool:
             epochs: Total epochs (split across phases).
             batch_size: Batch size.
             freeze_encoder_epochs: Number of epochs to freeze the encoder.
+            lr_phase1: Learning rate for phase 1. If None, uses the
+                learning rate the model was compiled with.
+            lr_phase2: Learning rate for phase 2 (fine-tuning). Defaults
+                to 1e-4 when None.
 
         Returns:
-            Training history.
+            Training history (combined across phases when two-phase).
         """
         if self.model is None:
             raise ValueError("Model must be built and compiled first")
 
         if freeze_encoder_epochs > 0:
+            if lr_phase1 is not None:
+                self.compile_model(learning_rate=lr_phase1)
             self._freeze_encoder()
-            print(f"\nPhase 1: Training with frozen encoder for "
-                  f"{freeze_encoder_epochs} epochs ...")
+            print(f"\nPhase 1: Training with frozen encoder for {freeze_encoder_epochs} epochs ...")
             callbacks_phase1 = [
                 keras.callbacks.EarlyStopping(
                     patience=5, restore_best_weights=True, monitor="val_loss"
                 ),
-                keras.callbacks.ReduceLROnPlateau(
-                    factor=0.5, patience=3, monitor="val_loss"
-                ),
+                keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=3, monitor="val_loss"),
                 keras.callbacks.ModelCheckpoint(
-                    "best_model_phase1.keras", save_best_only=True,
+                    "best_model_phase1.keras",
+                    save_best_only=True,
                     monitor="val_loss",
                 ),
             ]
             history_phase1 = self.model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 batch_size=batch_size,
                 epochs=freeze_encoder_epochs,
                 validation_data=(X_val, y_val),
@@ -208,23 +234,24 @@ class CellSegmentationTool:
                 verbose=1,
             )
             self._unfreeze_encoder()
-            self.compile_model(learning_rate=1e-4)
-            print(f"\nPhase 2: Fine-tuning entire model for "
-                  f"{epochs - freeze_encoder_epochs} epochs ...")
+            self.compile_model(learning_rate=lr_phase2 if lr_phase2 is not None else 1e-4)
+            print(
+                f"\nPhase 2: Fine-tuning entire model for "
+                f"{epochs - freeze_encoder_epochs} epochs ..."
+            )
             callbacks_phase2 = [
                 keras.callbacks.EarlyStopping(
                     patience=10, restore_best_weights=True, monitor="val_loss"
                 ),
-                keras.callbacks.ReduceLROnPlateau(
-                    factor=0.5, patience=5, monitor="val_loss"
-                ),
+                keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5, monitor="val_loss"),
                 keras.callbacks.ModelCheckpoint(
                     "best_model_phase2.keras", save_best_only=True, monitor="val_loss"
                 ),
             ]
             remaining_epochs = epochs - freeze_encoder_epochs
             history_phase2 = self.model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 batch_size=batch_size,
                 epochs=remaining_epochs,
                 initial_epoch=0,
@@ -232,22 +259,21 @@ class CellSegmentationTool:
                 callbacks=callbacks_phase2,
                 verbose=1,
             )
-            self.history = history_phase2
-            return history_phase2
+            self.history = self._merge_histories(history_phase1, history_phase2)
+            return self.history
         else:
             callbacks = [
                 keras.callbacks.EarlyStopping(
                     patience=10, restore_best_weights=True, monitor="val_loss"
                 ),
-                keras.callbacks.ReduceLROnPlateau(
-                    factor=0.5, patience=5, monitor="val_loss"
-                ),
+                keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5, monitor="val_loss"),
                 keras.callbacks.ModelCheckpoint(
                     "best_model.keras", save_best_only=True, monitor="val_loss"
                 ),
             ]
             self.history = self.model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 batch_size=batch_size,
                 epochs=epochs,
                 validation_data=(X_val, y_val),
@@ -270,8 +296,38 @@ class CellSegmentationTool:
         for layer in self.model.layers:
             layer.trainable = True
 
-    def save_checkpoint_to_drive(self, filepath="best_model.keras",
-                                  drive_path=None):
+    @staticmethod
+    def _merge_histories(history_phase1, history_phase2):
+        """Combine phase 1 and phase 2 training histories into one dict.
+
+        Returns a plain dict (mirroring ``History.history``) with each
+        metric's values concatenated in training order.
+        """
+        keys = set(history_phase1.history) | set(history_phase2.history)
+        merged = {}
+        for key in keys:
+            merged[key] = history_phase1.history.get(key, []) + history_phase2.history.get(key, [])
+        return merged
+
+    def load_model(self, filepath):
+        """Load a saved .keras model along with the custom losses/metrics.
+
+        Args:
+            filepath: Path to a Keras model checkpoint.
+        """
+        custom_objects = {
+            "dice_coef": self.dice_coef,
+            "dice_loss": self.dice_loss,
+            "iou_metric": self.iou_metric,
+            "focal_loss": self.focal_loss,
+            "combined_loss": self.combined_loss,
+        }
+        self.model = keras.models.load_model(filepath, custom_objects=custom_objects)
+        self.input_shape = self.model.input_shape[1:]
+        print(f"Loaded model from {filepath}")
+        return self.model
+
+    def save_checkpoint_to_drive(self, filepath="best_model.keras", drive_path=None):
         """Save model checkpoint to Google Drive for persistence.
 
         Args:
@@ -282,14 +338,16 @@ class CellSegmentationTool:
             drive_path = "/content/drive/MyDrive/cell_segmentation/best_model.keras"
         try:
             from google.colab import drive
+
             drive.mount("/content/drive")
             os.makedirs(os.path.dirname(drive_path), exist_ok=True)
             import shutil
+
             shutil.copy(filepath, drive_path)
             print(f"Model saved to Google Drive: {drive_path}")
         except ImportError:
             print("Google Colab drive not available. Skipping Drive save.")
-        except Exception as e:
+        except OSError as e:
             print(f"Failed to save to Drive: {e}")
 
     def predict_segmentation(self, image):
@@ -347,9 +405,17 @@ class CellSegmentationTool:
             Tuple of (cell_count, labeled_mask).
         """
         binary_mask = (mask > threshold).astype(np.uint8)
-        cleared_mask = morphology.remove_small_objects(
-            binary_mask.astype(bool), min_size=min_size
-        )
+        # remove_small_objects: `min_size` is deprecated since skimage 0.26
+        # in favor of `max_size` (which removes objects <= its value).
+        # max_size = min_size - 1 keeps objects >= min_size (same behavior).
+        try:
+            cleared_mask = morphology.remove_small_objects(
+                binary_mask.astype(bool), max_size=min_size - 1
+            )
+        except TypeError:
+            cleared_mask = morphology.remove_small_objects(
+                binary_mask.astype(bool), min_size=min_size
+            )
         distance = ndimage.distance_transform_edt(cleared_mask)
         coords = morphology.local_maxima(distance)
         markers = measure.label(coords)
@@ -358,8 +424,7 @@ class CellSegmentationTool:
         return cell_count, labels
 
     @staticmethod
-    def optimize_post_processing(mask, true_mask, threshold_grid=None,
-                                  min_size_grid=None):
+    def optimize_post_processing(mask, true_mask, threshold_grid=None, min_size_grid=None):
         """Grid search over threshold and min_size to optimize cell count accuracy.
 
         Args:
@@ -473,11 +538,10 @@ class CellSegmentationTool:
         }
 
     @staticmethod
-    def visualize_results(image, true_mask, raw_prediction,
-                          labeled_mask, cell_count):
+    def visualize_results(image, true_mask, raw_prediction, labeled_mask, cell_count):
         """Display a 4-panel comparison: Original, Ground Truth,
         Raw Prediction, and Final Labeled Segmentation."""
-        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+        _, axes = plt.subplots(1, 4, figsize=(20, 5))
         axes[0].imshow(image)
         axes[0].set_title("Original Image")
         axes[0].axis("off")
@@ -487,9 +551,7 @@ class CellSegmentationTool:
         axes[2].imshow(raw_prediction, cmap="gray")
         axes[2].set_title("Raw U-Net Prediction")
         axes[2].axis("off")
-        colored_labels = plt.cm.nipy_spectral(
-            labeled_mask / (labeled_mask.max() or 1)
-        )
+        colored_labels = plt.cm.nipy_spectral(labeled_mask / (labeled_mask.max() or 1))
         colored_labels[labeled_mask == 0] = 0
         axes[3].imshow(colored_labels)
         axes[3].set_title(f"Segmented Cells  Count: {cell_count}")
