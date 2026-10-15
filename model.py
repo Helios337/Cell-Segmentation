@@ -190,8 +190,10 @@ class CellSegmentationTool:
         Phase 2: Fine-tune entire model.
 
         Args:
-            X_train: Training images.
-            y_train: Training masks.
+            X_train: Training images (numpy) or a tf.data.Dataset that
+                yields (image, mask) batches (on-the-fly augmentation).
+            y_train: Training masks; must be None when X_train is a
+                tf.data.Dataset.
             X_val: Validation images.
             y_val: Validation masks.
             epochs: Total epochs (split across phases).
@@ -207,6 +209,12 @@ class CellSegmentationTool:
         """
         if self.model is None:
             raise ValueError("Model must be built and compiled first")
+
+        # X_train may be a tf.data.Dataset (on-the-fly augmentation). Keras
+        # fit() then derives batching from the dataset and takes no y arg.
+        use_dataset = isinstance(X_train, tf.data.Dataset)
+        fit_opts = {} if use_dataset else {"batch_size": batch_size}
+        train_y = None if use_dataset else y_train
 
         if freeze_encoder_epochs > 0:
             if lr_phase1 is not None:
@@ -226,12 +234,12 @@ class CellSegmentationTool:
             ]
             history_phase1 = self.model.fit(
                 X_train,
-                y_train,
-                batch_size=batch_size,
+                train_y,
                 epochs=freeze_encoder_epochs,
                 validation_data=(X_val, y_val),
                 callbacks=callbacks_phase1,
                 verbose=1,
+                **fit_opts,
             )
             self._unfreeze_encoder()
             self.compile_model(learning_rate=lr_phase2 if lr_phase2 is not None else 1e-4)
@@ -251,13 +259,13 @@ class CellSegmentationTool:
             remaining_epochs = epochs - freeze_encoder_epochs
             history_phase2 = self.model.fit(
                 X_train,
-                y_train,
-                batch_size=batch_size,
+                train_y,
                 epochs=remaining_epochs,
                 initial_epoch=0,
                 validation_data=(X_val, y_val),
                 callbacks=callbacks_phase2,
                 verbose=1,
+                **fit_opts,
             )
             self.history = self._merge_histories(history_phase1, history_phase2)
             return self.history
@@ -273,12 +281,12 @@ class CellSegmentationTool:
             ]
             self.history = self.model.fit(
                 X_train,
-                y_train,
-                batch_size=batch_size,
+                train_y,
                 epochs=epochs,
                 validation_data=(X_val, y_val),
                 callbacks=callbacks,
                 verbose=1,
+                **fit_opts,
             )
             return self.history
 

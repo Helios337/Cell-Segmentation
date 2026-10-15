@@ -21,7 +21,7 @@ from sklearn.model_selection import train_test_split
 
 from data_handler import BBBCDataLoader
 from model import CellSegmentationTool
-from utils import augment_image, load_config
+from utils import load_config, prepare_dataset
 
 
 def plot_training_history(history):
@@ -148,16 +148,11 @@ def run_training(args):
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, args)
 
     if args.augment:
-        print("  Augmentation: enabled")
-        X_train_aug = []
-        y_train_aug = []
-        for i in range(len(X_train)):
-            img_aug, mask_aug = augment_image(X_train[i], y_train[i, :, :, 0])
-            X_train_aug.append(img_aug)
-            y_train_aug.append(mask_aug)
-        X_train = np.array(X_train_aug)
-        y_train = np.expand_dims(np.array(y_train_aug), axis=-1)
-        print(f"  Augmented training samples: {len(X_train)}")
+        print("  Augmentation: enabled (on-the-fly, every epoch)")
+        X_train = prepare_dataset(X_train, y_train, augment=True, batch_size=args.batch_size)
+        y_train = None
+    else:
+        print("  Augmentation: disabled")
 
     total_epochs = args.epochs_phase1 + args.epochs_phase2
     print(
