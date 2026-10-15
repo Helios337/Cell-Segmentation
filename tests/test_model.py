@@ -161,6 +161,32 @@ def test_predict_tta():
     assert result.dtype == np.float32
 
 
+def test_predict_tta_preserves_location():
+    """TTA must undo flips on the output instead of smearing the mask.
+
+    A pass-through model (output = input channel 0) with a bright spot
+    in the top-left quadrant must keep the spot in the top-left after
+    TTA; averaging flipped predictions directly would smear the spot
+    across all four quadrants.
+    """
+    from tensorflow import keras
+    from tensorflow.keras import layers
+
+    tool = CellSegmentationTool(input_shape=(64, 64, 3))
+    inp = keras.Input(shape=(64, 64, 3))
+    out = layers.Lambda(lambda x: x[:, :, :, :1])(inp)
+    tool.model = keras.Model(inp, out)
+
+    img = np.zeros((64, 64, 3), dtype=np.float32)
+    img[:32, :32, 0] = 1.0  # bright spot, top-left quadrant only
+
+    tta = tool.predict_segmentation_tta(img, num_augmentations=4)
+    assert tta[:32, :32].mean() > 0.9
+    assert tta[:32, 32:].mean() < 0.1
+    assert tta[32:, :32].mean() < 0.1
+    assert tta[32:, 32:].mean() < 0.1
+
+
 def test_evaluate_metrics():
     """Test comprehensive evaluation metrics."""
     y_true = np.ones((64, 64), dtype=np.float32)
