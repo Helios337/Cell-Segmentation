@@ -487,8 +487,11 @@ class CellSegmentationTool:
         Returns:
             Dict with IoU, Dice, Precision, Recall, F1, Count MAE.
         """
-        y_true = np.atleast_3d(y_true)
-        y_pred = np.atleast_3d(y_pred)
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.ndim == 2:
+            y_true = y_true[np.newaxis, ...]
+            y_pred = y_pred[np.newaxis, ...]
         n = y_true.shape[0]
 
         iou_sum = 0
