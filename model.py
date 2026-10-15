@@ -15,6 +15,29 @@ from tensorflow.keras import layers
 from tensorflow.keras.applications import ResNet50
 
 
+class TargetScoreStopping(keras.callbacks.Callback):
+    """Stop training once a monitored validation metric reaches a target.
+
+    Lets you stop as soon as the model hits an acceptable score (e.g.
+    validation Dice >= 0.75) instead of running every configured epoch.
+    """
+
+    def __init__(self, monitor="val_dice_coef", target=0.75):
+        super().__init__()
+        self.monitor = monitor
+        self.target = float(target)
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        current = logs.get(self.monitor)
+        if current is not None and current >= self.target:
+            self.model.stop_training = True
+            print(
+                f"\n[TargetScoreStopping] {self.monitor}={current:.4f} "
+                f"reached target {self.target:.4f} at epoch {epoch + 1}; stopping early."
+            )
+
+
 class CellSegmentationTool:
     """
     A comprehensive tool for cell segmentation using a U-Net architecture
@@ -207,6 +230,7 @@ class CellSegmentationTool:
         freeze_encoder_epochs=0,
         lr_phase1=None,
         lr_phase2=None,
+        target_dice=0.0,
     ):
         """Train the U-Net model with two-phase training.
 
@@ -227,6 +251,8 @@ class CellSegmentationTool:
                 learning rate the model was compiled with.
             lr_phase2: Learning rate for phase 2 (fine-tuning). Defaults
                 to 1e-4 when None.
+            target_dice: If > 0, stop training as soon as validation Dice
+                reaches this value (checked at each epoch end).
 
         Returns:
             Training history (combined across phases when two-phase).
@@ -239,6 +265,12 @@ class CellSegmentationTool:
         use_dataset = isinstance(X_train, tf.data.Dataset)
         fit_opts = {} if use_dataset else {"batch_size": batch_size}
         train_y = None if use_dataset else y_train
+
+        target_callback = (
+            [TargetScoreStopping(monitor="val_dice_coef", target=target_dice)]
+            if target_dice and target_dice > 0
+            else []
+        )
 
         if freeze_encoder_epochs > 0:
             if lr_phase1 is not None:
@@ -255,7 +287,7 @@ class CellSegmentationTool:
                     save_best_only=True,
                     monitor="val_loss",
                 ),
-            ]
+            ] + target_callback
             history_phase1 = self.model.fit(
                 X_train,
                 train_y,
@@ -282,7 +314,7 @@ class CellSegmentationTool:
                 keras.callbacks.ModelCheckpoint(
                     "best_model_phase2.keras", save_best_only=True, monitor="val_loss"
                 ),
-            ]
+            ] + target_callback
             remaining_epochs = epochs - freeze_encoder_epochs
             history_phase2 = self.model.fit(
                 X_train,
@@ -305,7 +337,7 @@ class CellSegmentationTool:
                 keras.callbacks.ModelCheckpoint(
                     "best_model.keras", save_best_only=True, monitor="val_loss"
                 ),
-            ]
+            ] + target_callback
             self.history = self.model.fit(
                 X_train,
                 train_y,

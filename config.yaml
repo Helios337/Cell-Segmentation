@@ -18,6 +18,8 @@ training:
   early_stopping_patience: 10
   reduce_lr_patience: 5
   reduce_lr_factor: 0.5
+  # Stop training as soon as validation Dice reaches this score (0 disables).
+  target_dice: 0.0
 
 data:
   source: bbbc038

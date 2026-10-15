@@ -34,6 +34,24 @@ def test_compile_model_weight_decay():
     assert tool.model.optimizer.weight_decay == 1e-4
 
 
+def test_target_score_stopping():
+    """TargetScoreStopping halts training only once the score is reached."""
+    from model import TargetScoreStopping
+
+    class FakeModel:
+        stop_training = False
+
+    model = FakeModel()
+    cb = TargetScoreStopping(monitor="val_dice_coef", target=0.75)
+    cb.set_model(model)
+
+    cb.on_epoch_end(1, {"val_dice_coef": 0.60})
+    assert model.stop_training is False
+
+    cb.on_epoch_end(2, {"val_dice_coef": 0.80})
+    assert model.stop_training is True
+
+
 def test_dice_coef():
     """Test dice coefficient with perfect, partial, and no overlap."""
     tool = CellSegmentationTool()
