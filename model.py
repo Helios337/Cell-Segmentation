@@ -15,6 +15,29 @@ from tensorflow.keras import layers
 from tensorflow.keras.applications import ResNet50
 
 
+class TargetScoreStopping(keras.callbacks.Callback):
+    """Stop training once a monitored validation metric reaches a target.
+
+    Lets you stop as soon as the model hits an acceptable score (e.g.
+    validation Dice >= 0.75) instead of running every configured epoch.
+    """
+
+    def __init__(self, monitor="val_dice_coef", target=0.75):
+        super().__init__()
+        self.monitor = monitor
+        self.target = float(target)
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        current = logs.get(self.monitor)
+        if current is not None and current >= self.target:
+            self.model.stop_training = True
+            print(
+                f"\n[TargetScoreStopping] {self.monitor}={current:.4f} "
+                f"reached target {self.target:.4f} at epoch {epoch + 1}; stopping early."
+            )
+
+
 class CellSegmentationTool:
     """
     A comprehensive tool for cell segmentation using a U-Net architecture
@@ -40,8 +63,20 @@ class CellSegmentationTool:
         self.history = None
         self.encoder_layers = []
 
-    def build_unet(self):
-        """Build the U-Net architecture with ResNet50 pretrained encoder."""
+    def build_unet(self, decoder_scale=1.0):
+        """Build the U-Net architecture with ResNet50 pretrained encoder.
+
+        Args:
+            decoder_scale: Scales the decoder channel counts (e.g. 0.5 halves
+                them). This reduces the number of trainable parameters, which
+                curbs overfitting when training on small datasets. The
+                ResNet50 encoder is unchanged.
+        """
+        self.decoder_scale = float(decoder_scale)
+
+        def dc(n):
+            return max(8, round(n * self.decoder_scale))
+
         inputs = keras.Input(shape=self.input_shape)
 
         resnet = ResNet50(
@@ -58,53 +93,55 @@ class CellSegmentationTool:
         b5 = resnet.get_layer("conv5_block3_out").output
         self.encoder_layers = resnet.layers
 
-        u6 = layers.Conv2DTranspose(512, (2, 2), strides=(2, 2), padding="same")(b5)
+        d6, d7, d8, d9, d10 = dc(512), dc(256), dc(128), dc(64), dc(32)
+
+        u6 = layers.Conv2DTranspose(d6, (2, 2), strides=(2, 2), padding="same")(b5)
         u6 = layers.concatenate([u6, s4])
         c6 = layers.Conv2D(
-            512, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d6, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(u6)
         c6 = layers.Dropout(0.2)(c6)
         c6 = layers.Conv2D(
-            512, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d6, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(c6)
 
-        u7 = layers.Conv2DTranspose(256, (2, 2), strides=(2, 2), padding="same")(c6)
+        u7 = layers.Conv2DTranspose(d7, (2, 2), strides=(2, 2), padding="same")(c6)
         u7 = layers.concatenate([u7, s3])
         c7 = layers.Conv2D(
-            256, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d7, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(u7)
         c7 = layers.Dropout(0.2)(c7)
         c7 = layers.Conv2D(
-            256, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d7, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(c7)
 
-        u8 = layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding="same")(c7)
+        u8 = layers.Conv2DTranspose(d8, (2, 2), strides=(2, 2), padding="same")(c7)
         u8 = layers.concatenate([u8, s2])
         c8 = layers.Conv2D(
-            128, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d8, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(u8)
         c8 = layers.Dropout(0.1)(c8)
         c8 = layers.Conv2D(
-            128, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d8, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(c8)
 
-        u9 = layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding="same")(c8)
+        u9 = layers.Conv2DTranspose(d9, (2, 2), strides=(2, 2), padding="same")(c8)
         u9 = layers.concatenate([u9, s1], axis=3)
         c9 = layers.Conv2D(
-            64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d9, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(u9)
         c9 = layers.Dropout(0.1)(c9)
         c9 = layers.Conv2D(
-            64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d9, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(c9)
 
-        u10 = layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding="same")(c9)
+        u10 = layers.Conv2DTranspose(d10, (2, 2), strides=(2, 2), padding="same")(c9)
         c10 = layers.Conv2D(
-            32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d10, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(u10)
         c10 = layers.Dropout(0.1)(c10)
         c10 = layers.Conv2D(
-            32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
+            d10, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same"
         )(c10)
 
         outputs = layers.Conv2D(1, (1, 1), activation="sigmoid")(c10)
@@ -158,15 +195,25 @@ class CellSegmentationTool:
         focal = CellSegmentationTool.focal_loss(y_true, y_pred)
         return tf.reduce_mean(bce) + dice + focal
 
-    def compile_model(self, learning_rate=1e-4):
-        """Compile the U-Net model with Adam optimizer and combined loss."""
+    def compile_model(self, learning_rate=1e-4, weight_decay=0.0):
+        """Compile the U-Net model with Adam optimizer and combined loss.
+
+        Args:
+            learning_rate: Adam learning rate.
+            weight_decay: L2-style decoupled weight decay (AdamW). A small
+                value (e.g. 1e-4) regularizes the decoder and helps curb
+                overfitting on small datasets.
+        """
+        self.weight_decay = float(weight_decay)
         if self.model is None:
             raise ValueError("Model must be built first using build_unet()")
         if tf.config.list_physical_devices("GPU"):
             policy = tf.keras.mixed_precision.Policy("mixed_float16")
             tf.keras.mixed_precision.set_global_policy(policy)
         self.model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+            optimizer=keras.optimizers.Adam(
+                learning_rate=learning_rate, weight_decay=self.weight_decay
+            ),
             loss=self.combined_loss,
             metrics=[self.dice_coef, self.iou_metric, "binary_accuracy"],
         )
@@ -183,6 +230,7 @@ class CellSegmentationTool:
         freeze_encoder_epochs=0,
         lr_phase1=None,
         lr_phase2=None,
+        target_dice=0.0,
     ):
         """Train the U-Net model with two-phase training.
 
@@ -203,6 +251,8 @@ class CellSegmentationTool:
                 learning rate the model was compiled with.
             lr_phase2: Learning rate for phase 2 (fine-tuning). Defaults
                 to 1e-4 when None.
+            target_dice: If > 0, stop training as soon as validation Dice
+                reaches this value (checked at each epoch end).
 
         Returns:
             Training history (combined across phases when two-phase).
@@ -216,9 +266,15 @@ class CellSegmentationTool:
         fit_opts = {} if use_dataset else {"batch_size": batch_size}
         train_y = None if use_dataset else y_train
 
+        target_callback = (
+            [TargetScoreStopping(monitor="val_dice_coef", target=target_dice)]
+            if target_dice and target_dice > 0
+            else []
+        )
+
         if freeze_encoder_epochs > 0:
             if lr_phase1 is not None:
-                self.compile_model(learning_rate=lr_phase1)
+                self.compile_model(learning_rate=lr_phase1, weight_decay=self.weight_decay)
             self._freeze_encoder()
             print(f"\nPhase 1: Training with frozen encoder for {freeze_encoder_epochs} epochs ...")
             callbacks_phase1 = [
@@ -231,7 +287,7 @@ class CellSegmentationTool:
                     save_best_only=True,
                     monitor="val_loss",
                 ),
-            ]
+            ] + target_callback
             history_phase1 = self.model.fit(
                 X_train,
                 train_y,
@@ -242,7 +298,10 @@ class CellSegmentationTool:
                 **fit_opts,
             )
             self._unfreeze_encoder()
-            self.compile_model(learning_rate=lr_phase2 if lr_phase2 is not None else 1e-4)
+            self.compile_model(
+                learning_rate=lr_phase2 if lr_phase2 is not None else 1e-4,
+                weight_decay=self.weight_decay,
+            )
             print(
                 f"\nPhase 2: Fine-tuning entire model for "
                 f"{epochs - freeze_encoder_epochs} epochs ..."
@@ -255,7 +314,7 @@ class CellSegmentationTool:
                 keras.callbacks.ModelCheckpoint(
                     "best_model_phase2.keras", save_best_only=True, monitor="val_loss"
                 ),
-            ]
+            ] + target_callback
             remaining_epochs = epochs - freeze_encoder_epochs
             history_phase2 = self.model.fit(
                 X_train,
@@ -278,7 +337,7 @@ class CellSegmentationTool:
                 keras.callbacks.ModelCheckpoint(
                     "best_model.keras", save_best_only=True, monitor="val_loss"
                 ),
-            ]
+            ] + target_callback
             self.history = self.model.fit(
                 X_train,
                 train_y,

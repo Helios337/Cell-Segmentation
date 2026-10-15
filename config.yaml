@@ -3,6 +3,11 @@ model:
   encoder: resnet50
   pretrained: true
   freeze_encoder_epochs: 5
+  # Scale decoder channel counts (< 1.0 reduces capacity to curb overfitting
+  # on small datasets; ResNet50 encoder is unchanged).
+  decoder_scale: 0.5
+  # Adam weight decay (L2-style regularization).
+  weight_decay: 0.0001
 
 training:
   epochs_phase1: 10
@@ -13,6 +18,8 @@ training:
   early_stopping_patience: 10
   reduce_lr_patience: 5
   reduce_lr_factor: 0.5
+  # Stop training as soon as validation Dice reaches this score (0 disables).
+  target_dice: 0.0
 
 data:
   source: bbbc038

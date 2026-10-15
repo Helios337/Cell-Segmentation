@@ -31,6 +31,19 @@ def test_load_config_invalid_yaml_returns_empty(tmp_path):
     assert load_config(str(config_file)) == {}
 
 
+def test_config_wires_capacity_and_regularization(tmp_path):
+    """decoder_scale and weight_decay from config become CLI defaults."""
+    from main import apply_config_defaults, build_parser, load_config
+
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("model:\n  decoder_scale: 0.5\n  weight_decay: 0.0001\n")
+    parser = build_parser()
+    apply_config_defaults(parser, load_config(str(config_file)))
+    args = parser.parse_args([])
+    assert args.decoder_scale == 0.5
+    assert args.weight_decay == 0.0001
+
+
 def test_prepare_dataset_basic_shapes():
     """A plain dataset yields correctly batched (image, mask) pairs."""
     X = np.zeros((16, 64, 64, 3), dtype=np.float32)
