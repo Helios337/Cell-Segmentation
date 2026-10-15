@@ -177,6 +177,10 @@ def run_training(args):
     print_metrics(metrics)
 
     print("\n[5/6] Post-processing optimization ...")
+    # Fall back to the CLI values when optimization is disabled, so the
+    # visualization step below uses the same (best-known) settings.
+    best_thresh = args.threshold
+    best_min_size = args.min_size
     if args.optimize_thresholds:
         test_idx = np.random.randint(0, len(X_test))
         test_image = X_test[test_idx]
@@ -202,7 +206,7 @@ def run_training(args):
         raw_prediction = cell_tool.predict_segmentation(test_image)
 
     final_count, final_labels = cell_tool.post_process_and_count(
-        raw_prediction, threshold=args.threshold, min_size=args.min_size
+        raw_prediction, threshold=best_thresh, min_size=best_min_size
     )
     cell_tool.visualize_results(test_image, test_mask, raw_prediction, final_labels, final_count)
     print(f"  Predicted cell count: {final_count}")

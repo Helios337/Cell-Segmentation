@@ -464,12 +464,21 @@ class CellSegmentationTool:
         predictions = []
         for i in range(num_augmentations):
             aug_image = image.copy()
-            if i % 2 == 1:
+            flip_w = i % 2 == 1
+            flip_h = i % 4 >= 2
+            if flip_w:
                 aug_image = np.flip(aug_image, axis=2).copy()
-            if i % 4 >= 2:
+            if flip_h:
                 aug_image = np.flip(aug_image, axis=1).copy()
-            pred = self.model.predict(aug_image, verbose=0)
-            predictions.append(pred[0, :, :, 0])
+            pred = self.model.predict(aug_image, verbose=0)[0, :, :, 0]
+            # Undo the augmentation on the prediction before averaging,
+            # otherwise masks in different orientations are averaged
+            # directly, smearing each cell across mirrored locations.
+            if flip_h:
+                pred = np.flip(pred, axis=0)
+            if flip_w:
+                pred = np.flip(pred, axis=1)
+            predictions.append(pred)
 
         avg_pred = np.mean(predictions, axis=0)
         return avg_pred
