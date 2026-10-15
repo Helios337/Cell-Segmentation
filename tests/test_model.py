@@ -139,6 +139,33 @@ def test_evaluate_metrics():
     assert metrics["iou"] > 0.9
 
 
+def test_evaluate_metrics_2d_counts_whole_image():
+    """2D input must be treated as ONE image, not per-row.
+
+    Regression test: np.atleast_3d turns (H, W) into (H, W, 1), so the
+    metric loop previously iterated over rows instead of images, producing
+    meaningless precision/recall/count values.
+    """
+    from skimage.draw import disk
+
+    mask = np.zeros((128, 128), dtype=np.float32)
+    for center in [(30, 30), (70, 30), (50, 70)]:
+        rr, cc = disk(center, 15)
+        mask[rr, cc] = 1.0
+
+    # model predicts nothing: count_pred = 0, truth has 3 cells -> MAE = 3
+    zero_pred = np.zeros((128, 128), dtype=np.float32)
+    metrics = CellSegmentationTool.evaluate_metrics(mask, zero_pred, threshold=0.5)
+    assert metrics["count_mae"] == pytest.approx(3.0)
+    assert metrics["precision"] == 0.0
+    assert metrics["recall"] == 0.0
+
+    # perfect prediction: metrics should be ~perfect for the whole image
+    perfect = CellSegmentationTool.evaluate_metrics(mask, mask, threshold=0.5)
+    assert perfect["iou"] > 0.9
+    assert perfect["count_mae"] == pytest.approx(0.0)
+
+
 def test_optimize_post_processing():
     """Test post-processing grid search optimization."""
     mask = np.zeros((100, 100), dtype=np.float32)
